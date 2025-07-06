@@ -15,6 +15,4 @@ class Post(db.Model):
     title = db.Column(db.String(256), nullable=False)
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    # Columns for storing image data directly in the database
-    img = db.Column(db.LargeBinary, nullable=True)
-    mimetype = db.Column(db.String(100), nullable=True)
+    image_url = db.Column(db.String(256), nullable=True) # New column for the image URL

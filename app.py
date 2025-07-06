@@ -1,12 +1,14 @@
 import os
+import boto3
+from botocore.exceptions import NoCredentialsError
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, flash, Response
+    redirect, url_for, flash
 )
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 from flask_login import (
-    LoginManager, login_user, logout_user, 
+    LoginManager, login_user, logout_user,
     login_required, current_user
 )
 
@@ -23,8 +25,11 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = "login"
 
-    # UPLOAD_FOLDER is no longer used for images but let's keep it for now
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
+    s3 = boto3.client("s3")
+    S3_BUCKET = app.config["S3_BUCKET"]
+
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -42,14 +47,6 @@ def create_app():
     def index():
         posts = Post.query.order_by(Post.created_at.desc()).all()
         return render_template("index.html", posts=posts)
-
-    # --- NEW: Route to serve images from the database ---
-    @app.route('/image/<int:post_id>')
-    def image(post_id):
-        post = Post.query.get_or_404(post_id)
-        if not post.img:
-            return "No image found", 404
-        return Response(post.img, mimetype=post.mimetype)
 
     # --- Authentication Routes ---
     @app.route("/login", methods=["GET", "POST"])
@@ -96,19 +93,32 @@ def create_app():
                 flash("Title and body are required.")
                 return redirect(request.url)
 
-            # Default to no image
-            img_data = None
-            mimetype = None
-
+            image_url = None
             if file and file.filename:
                 if allowed_file(file.filename):
-                    img_data = file.read() # Read image data into memory
-                    mimetype = file.mimetype
+                    filename = secure_filename(file.filename)
+                    try:
+                        s3.upload_fileobj(
+                            file,
+                            S3_BUCKET,
+                            filename,
+                            ExtraArgs={
+                                "ContentType": file.content_type
+                            }
+                        )
+                        image_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{filename}"
+                    except NoCredentialsError:
+                        flash("AWS credentials not available.")
+                        return redirect(request.url)
+                    except Exception as e:
+                        flash(f"An error occurred: {e}")
+                        return redirect(request.url)
+
                 else:
                     flash("Invalid file type")
                     return redirect(request.url)
 
-            post = Post(title=title, body=body, img=img_data, mimetype=mimetype)
+            post = Post(title=title, body=body, image_url=image_url)
             db.session.add(post)
             db.session.commit()
             flash("Post created successfully!", "success")

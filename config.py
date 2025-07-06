@@ -13,3 +13,5 @@ class Config:
     # You will need to generate a password hash and set these
     ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+    S3_BUCKET = os.environ.get("S3_BUCKET")
+
