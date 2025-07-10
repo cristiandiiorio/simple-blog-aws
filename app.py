@@ -91,38 +91,45 @@ def create_app():
 
             if not title or not body:
                 flash("Title and body are required.")
-                return redirect(request.url)
+                return render_template("create_post.html")
 
             image_url = None
             if file and file.filename:
                 if allowed_file(file.filename):
                     filename = secure_filename(file.filename)
                     try:
+                        # Upload directly to S3 with public-read ACL
                         s3.upload_fileobj(
                             file,
                             S3_BUCKET,
                             filename,
                             ExtraArgs={
+                                "ACL": "public-read",
                                 "ContentType": file.content_type
                             }
                         )
                         image_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{filename}"
                     except NoCredentialsError:
+                        app.logger.error("AWS credentials not available for S3 upload")
                         flash("AWS credentials not available.")
-                        return redirect(request.url)
-                    except Exception as e:
-                        flash(f"An error occurred: {e}")
-                        return redirect(request.url)
-
+                        return render_template("create_post.html")
+                    except ClientError as e:
+                        # catch any S3 client errors
+                        app.logger.error(f"S3 upload error: {e}")
+                        flash("There was an error uploading the image.")
+                        return render_template("create_post.html")
                 else:
                     flash("Invalid file type")
-                    return redirect(request.url)
+                    return render_template("create_post.html")
 
+            # Save the post (with image_url if set)
             post = Post(title=title, body=body, image_url=image_url)
             db.session.add(post)
             db.session.commit()
+
             flash("Post created successfully!", "success")
             return redirect(url_for("index"))
+
         return render_template("create_post.html")
 
     return app
